@@ -113,17 +113,19 @@ def _orphan_gitlinks(facts, by_path):
     for path in sorted(facts.gitlinks):
         if path in by_path:
             continue
-        out.append(Finding(
-            NO_ENTRY,
-            path,
-            f"a gitlink here is pinned at {facts.gitlinks[path][:12]}, and "
-            f"nothing in .gitmodules maps it to a URL -- `git clone "
-            f"--recurse-submodules` leaves this directory empty and exits 0, "
-            f"and `git submodule update --init` exits 128 without populating "
-            f"any submodule in the repository",
-            path=path,
-            extra={"commit": facts.gitlinks[path]},
-        ))
+        out.append(
+            Finding(
+                NO_ENTRY,
+                path,
+                f"a gitlink here is pinned at {facts.gitlinks[path][:12]}, and "
+                f"nothing in .gitmodules maps it to a URL -- `git clone "
+                f"--recurse-submodules` leaves this directory empty and exits 0, "
+                f"and `git submodule update --init` exits 128 without populating "
+                f"any submodule in the repository",
+                path=path,
+                extra={"commit": facts.gitlinks[path]},
+            )
+        )
     return out
 
 
@@ -133,43 +135,58 @@ def _entry_problems(facts, by_path):
         where = f".gitmodules:{entry.name}"
 
         if entry.path is None:
-            out.append(Finding(
-                NO_GITLINK, where,
-                "this block sets no `path`, so git has nothing to match it "
-                "against and never reads another word of it",
-                name=entry.name,
-            ))
+            out.append(
+                Finding(
+                    NO_GITLINK,
+                    where,
+                    "this block sets no `path`, so git has nothing to match it "
+                    "against and never reads another word of it",
+                    name=entry.name,
+                )
+            )
             continue
 
         if entry.path not in facts.gitlinks:
-            out.append(Finding(
-                NO_GITLINK, where,
-                f"declares path '{entry.path}', which is not a gitlink in "
-                f"{facts.rev} -- `git submodule init` never registers it, "
-                f"`git submodule update` never clones it, and the whole "
-                f"block is inert",
-                name=entry.name, path=entry.path,
-            ))
+            out.append(
+                Finding(
+                    NO_GITLINK,
+                    where,
+                    f"declares path '{entry.path}', which is not a gitlink in "
+                    f"{facts.rev} -- `git submodule init` never registers it, "
+                    f"`git submodule update` never clones it, and the whole "
+                    f"block is inert",
+                    name=entry.name,
+                    path=entry.path,
+                )
+            )
             continue
 
         if entry.url is None:
-            out.append(Finding(
-                NO_URL, where,
-                f"the gitlink at '{entry.path}' is declared but has no "
-                f"`url`, so git has nowhere to clone it from: `No url found "
-                f"for submodule path '{entry.path}' in .gitmodules`",
-                name=entry.name, path=entry.path,
-            ))
+            out.append(
+                Finding(
+                    NO_URL,
+                    where,
+                    f"the gitlink at '{entry.path}' is declared but has no "
+                    f"`url`, so git has nowhere to clone it from: `No url found "
+                    f"for submodule path '{entry.path}' in .gitmodules`",
+                    name=entry.name,
+                    path=entry.path,
+                )
+            )
 
         if (entry.update or "").strip() == "none":
-            out.append(Finding(
-                UPDATE_NONE, where,
-                f"`update = none` means `git submodule update` prints "
-                f"`Skipping submodule '{entry.path}'` and exits 0, leaving "
-                f"the directory empty -- a checkout of this repository never "
-                f"contains it unless somebody passes --checkout",
-                name=entry.name, path=entry.path,
-            ))
+            out.append(
+                Finding(
+                    UPDATE_NONE,
+                    where,
+                    f"`update = none` means `git submodule update` prints "
+                    f"`Skipping submodule '{entry.path}'` and exits 0, leaving "
+                    f"the directory empty -- a checkout of this repository never "
+                    f"contains it unless somebody passes --checkout",
+                    name=entry.name,
+                    path=entry.path,
+                )
+            )
     return out
 
 
@@ -179,8 +196,7 @@ def _local_problems(facts):
     notes = []
     resolved = resolve_urls(facts.entries, facts.remote_url, facts.root)
 
-    live = [e for e in facts.entries
-            if e.path in facts.gitlinks and e.url is not None]
+    live = [e for e in facts.entries if e.path in facts.gitlinks and e.url is not None]
     initialised = [e for e in live if "url" in facts.local.get(e.name, {})]
     # A clone where nothing is initialised is just a clone nobody has run
     # `git submodule update --init` in yet, and saying so twenty times is
@@ -195,15 +211,19 @@ def _local_problems(facts):
 
         if configured is None:
             if entry.url is not None and note_uninitialised:
-                notes.append(Finding(
-                    NOT_INITIALISED, f".gitmodules:{entry.name}",
-                    f"not initialised in this clone, while the repository's "
-                    f"other submodules are -- no submodule.{entry.name}.url "
-                    f"in .git/config. `git submodule update --init` stops at "
-                    f"the first one it cannot do, so a gap in the middle is "
-                    f"often where it stopped",
-                    name=entry.name, path=entry.path,
-                ))
+                notes.append(
+                    Finding(
+                        NOT_INITIALISED,
+                        f".gitmodules:{entry.name}",
+                        f"not initialised in this clone, while the repository's "
+                        f"other submodules are -- no submodule.{entry.name}.url "
+                        f"in .git/config. `git submodule update --init` stops at "
+                        f"the first one it cannot do, so a gap in the middle is "
+                        f"often where it stopped",
+                        name=entry.name,
+                        path=entry.path,
+                    )
+                )
             continue
 
         want = resolved.get(entry.name)
@@ -212,17 +232,21 @@ def _local_problems(facts):
 
         declared = entry.url
         via = "" if declared == want else f" (declared as '{declared}')"
-        found.append(Finding(
-            STALE_URL, f".gitmodules:{entry.name}",
-            f"this clone fetches '{entry.path}' from '{configured}', but "
-            f".gitmodules now says '{want}'{via}. git froze the URL into "
-            f".git/config when the submodule was initialised and never "
-            f"revisits it, so the committed change has no effect here, or "
-            f"in anyone else's existing clone, until `git submodule sync` "
-            f"is run",
-            name=entry.name, path=entry.path,
-            extra={"configured": configured, "declared": want},
-        ))
+        found.append(
+            Finding(
+                STALE_URL,
+                f".gitmodules:{entry.name}",
+                f"this clone fetches '{entry.path}' from '{configured}', but "
+                f".gitmodules now says '{want}'{via}. git froze the URL into "
+                f".git/config when the submodule was initialised and never "
+                f"revisits it, so the committed change has no effect here, or "
+                f"in anyone else's existing clone, until `git submodule sync` "
+                f"is run",
+                name=entry.name,
+                path=entry.path,
+                extra={"configured": configured, "declared": want},
+            )
+        )
     return found, notes, bool(live) and not initialised
 
 
@@ -234,9 +258,7 @@ def counts(audit_result):
     return {
         "gitlinks": len(audit_result.facts.gitlinks),
         "entries": len(audit_result.facts.entries),
-        "committed": sum(
-            1 for f in audit_result.findings if f.scope == "committed"
-        ),
+        "committed": sum(1 for f in audit_result.findings if f.scope == "committed"),
         "local": sum(1 for f in audit_result.findings if f.scope == "local"),
         "notes": len(audit_result.notes),
         "kinds": kinds,

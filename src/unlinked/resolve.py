@@ -69,25 +69,21 @@ def _ask_git(relative, base):
 
         for index, (name, url) in enumerate(sorted(relative.items()), start=1):
             path = f"s{index}"
-            run(("config", "--file", ".gitmodules",
-                 f"submodule.{name}.path", path), cwd=scratch)
-            run(("config", "--file", ".gitmodules",
-                 f"submodule.{name}.url", url), cwd=scratch)
+            run(("config", "--file", ".gitmodules", f"submodule.{name}.path", path), cwd=scratch)
+            run(("config", "--file", ".gitmodules", f"submodule.{name}.url", url), cwd=scratch)
             # `submodule sync` only touches submodules that are already
             # initialised, so each one needs a URL in config to overwrite
             # and a gitlink in the index to be found by. The sha need not
             # exist as an object; nothing resolves it.
             run(("config", f"submodule.{name}.url", PLACEHOLDER), cwd=scratch)
-            run(("update-index", "--add", "--cacheinfo",
-                 f"160000,{'0' * 39}1,{path}"), cwd=scratch)
+            run(("update-index", "--add", "--cacheinfo", f"160000,{'0' * 39}1,{path}"), cwd=scratch)
 
         # Offline by construction: sync only rewrites config.
         ok, _ = run_ok(("submodule", "sync"), cwd=scratch)
         if not ok:
             return {}
 
-        _, out = run_ok(("config", "-z", "--get-regexp", r"^submodule\..*\.url"),
-                        cwd=scratch)
+        _, out = run_ok(("config", "-z", "--get-regexp", r"^submodule\..*\.url"), cwd=scratch)
         answers = {}
         for key, value in config_pairs(out):
             name, leaf = split_subsection(key)

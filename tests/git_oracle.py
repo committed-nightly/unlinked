@@ -32,12 +32,9 @@ ENV = {
 
 
 def git(*args, cwd, check=True):
-    proc = subprocess.run(("git", *args), cwd=cwd, capture_output=True,
-                          text=True, env=ENV)
+    proc = subprocess.run(("git", *args), cwd=cwd, capture_output=True, text=True, env=ENV)
     if check and proc.returncode != 0:
-        raise AssertionError(
-            f"git {' '.join(args)} failed in {cwd}:\n{proc.stderr}"
-        )
+        raise AssertionError(f"git {' '.join(args)} failed in {cwd}:\n{proc.stderr}")
     return proc
 
 
@@ -74,13 +71,11 @@ def add_submodule(super_path, remote_path, at, message=None):
 
 
 def gitmodules_set(super_path, name, key, value):
-    git("config", "--file", ".gitmodules", f"submodule.{name}.{key}", value,
-        cwd=super_path)
+    git("config", "--file", ".gitmodules", f"submodule.{name}.{key}", value, cwd=super_path)
 
 
 def gitmodules_drop(super_path, name):
-    git("config", "--file", ".gitmodules", "--remove-section",
-        f"submodule.{name}", cwd=super_path)
+    git("config", "--file", ".gitmodules", "--remove-section", f"submodule.{name}", cwd=super_path)
 
 
 def commit_all(super_path, message):
@@ -92,8 +87,7 @@ def clone(super_path, into, recurse=False):
     args = [*FILE_OK, "clone", "--quiet"]
     if recurse:
         args.append("--recurse-submodules")
-    proc = subprocess.run(("git", *args, super_path, into),
-                          capture_output=True, text=True, env=ENV)
+    proc = subprocess.run(("git", *args, super_path, into), capture_output=True, text=True, env=ENV)
     return proc
 
 
@@ -101,21 +95,21 @@ def submodule_update(repo, *extra):
     """Run `git submodule update --init` and report exactly what git did."""
     return subprocess.run(
         ("git", *FILE_OK, "submodule", "update", "--init", *extra),
-        cwd=repo, capture_output=True, text=True, env=ENV,
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=ENV,
     )
 
 
 def populated(repo, path):
     """Whether a submodule directory actually has the checkout in it."""
     full = os.path.join(repo, path)
-    return os.path.isdir(full) and bool(
-        [n for n in os.listdir(full) if n != ".git"]
-    )
+    return os.path.isdir(full) and bool([n for n in os.listdir(full) if n != ".git"])
 
 
 def config_url(repo, name):
-    proc = git("config", "--local", "--get", f"submodule.{name}.url",
-               cwd=repo, check=False)
+    proc = git("config", "--local", "--get", f"submodule.{name}.url", cwd=repo, check=False)
     return proc.stdout.strip() if proc.returncode == 0 else None
 
 

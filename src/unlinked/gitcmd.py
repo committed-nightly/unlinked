@@ -93,7 +93,7 @@ def split_subsection(key, section="submodule"):
     prefix = section + "."
     if not key.startswith(prefix):
         return None, None
-    rest = key[len(prefix):]
+    rest = key[len(prefix) :]
     name, sep, leaf = rest.rpartition(".")
     if not sep:
         return None, None

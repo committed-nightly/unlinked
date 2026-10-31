@@ -81,7 +81,7 @@ def test_exit_2_on_an_unparseable_gitmodules(tmp_path, capsys):
     there is no finding we could print about it that would be true."""
     super_path = g.make_super(str(tmp_path))
     with open(f"{super_path}/.gitmodules", "w") as handle:
-        handle.write("[submodule \"x\"\n  path = y\n")
+        handle.write('[submodule "x"\n  path = y\n')
     assert main([super_path]) == 2
     captured = capsys.readouterr()
     assert captured.out == ""

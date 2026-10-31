@@ -1,0 +1,155 @@
+name: CI
+
+'on':
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - run: pip install -e ".[dev]"
+      - run: pytest --junit-xml=results.xml
+
+      # Everything that makes this repository trustworthy is in the tests
+      # that build a repository and ask git what it does with it, and those
+      # skip themselves when git is missing. A green run that skipped them
+      # tested the author's opinion of submodules and nothing else.
+      - name: the tests that ask git actually ran
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          root = ET.parse("results.xml").getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          total = int(suite.get("tests", 0))
+          skipped = int(suite.get("skipped", 0))
+          print(f"{total} tests, {skipped} skipped")
+          assert total >= 45, f"only {total} tests collected"
+          assert skipped == 0, f"{skipped} tests skipped -- git was not asked"
+          PY
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install ruff
+      - run: ruff check .
+
+      # logbook#60: the org's repositories run `ruff check` and not
+      # `ruff format --check`, so running the project's own formatter
+      # produces a diff on a green main. Enforced here from the start.
+      - run: ruff format --check .
+
+      # logbook#23 and logbook#40: a workflow that never compiles produces
+      # no jobs, no logs and no annotations, and most of the org does not
+      # check. ubuntu-latest ships shellcheck, so the `run:` blocks and the
+      # two shell scripts are covered too.
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          version=1.7.7
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v${version}/actionlint_${version}_linux_amd64.tar.gz"
+          tar -xzf actionlint.tar.gz actionlint
+          shellcheck --version | head -2
+          ./actionlint -no-color -oneline
+
+      - name: shellcheck the scripts
+        run: shellcheck probe/ask-git.sh examples/make-example-repo.sh
+
+  dogfood:
+    # The README quotes a run of this tool. This is the job that notices
+    # when the example or the output changes, before a reader does.
+    #
+    # It deliberately does not run unlinked on *this* repository: unlinked
+    # has no submodules, so such a step would assert nothing and pass for
+    # ever (logbook#59). It runs against a repository built to be broken,
+    # and asserts the findings by name.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e .
+
+      - name: the example reports what the README says it reports
+        run: |
+          set -euo pipefail
+          examples/make-example-repo.sh /tmp/unlinked-example
+          unlinked /tmp/unlinked-example/app > out.txt && status=0 || status=$?
+          cat out.txt
+          test "$status" -eq 1
+
+          # Every kind the README's table names, at the place it names.
+          grep -qF 'vendor/widgets  no-entry' out.txt
+          grep -qF '.gitmodules:vendor/old-parser  no-gitlink' out.txt
+          grep -qF '.gitmodules:vendor/logging  update-none' out.txt
+          grep -qF '.gitmodules:vendor/parser  stale-url' out.txt
+
+          # The gitlink hash is quoted in the README, which only works
+          # because the example is built with fixed commit dates.
+          grep -qF 'pinned at 51f45708bb81' out.txt
+
+          # The relative URL resolved against the superproject's remote.
+          grep -qF "now says 'https://github.com/example/parser.git'" out.txt
+
+          # The summary, which is the line most likely to drift.
+          grep -qF 'Found 3 declarations git never acts on and 1 URL this clone has frozen, across 4' out.txt
+          grep -qF 'submodules. Read 3 gitlinks and 3 .gitmodules entries.' out.txt
+
+      - name: committed-only drops the local finding and nothing else
+        run: |
+          set -euo pipefail
+          unlinked --committed-only /tmp/unlinked-example/app > c.txt && s=0 || s=$?
+          test "$s" -eq 1
+          cat c.txt
+          test "$(grep -c 'stale-url' c.txt)" -eq 0
+          grep -qF 'Found 3 declarations git never acts on, across 3 submodules.' c.txt
+
+      - name: a healthy repository exits 0 and says so
+        run: |
+          set -euo pipefail
+          unlinked /tmp/unlinked-example/remotes/logging | tee h.txt
+          grep -qF 'No submodules here' h.txt
+          # The distinction logbook#59 is about: a repository with nothing
+          # to check must not get the sentence meaning "I checked".
+          test "$(grep -c 'lines up' h.txt)" -eq 0
+
+      - name: a run that could not read the repository exits 2 and prints nothing
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/not-a-repo
+          unlinked /tmp/not-a-repo > out2.txt 2> err2.txt && s=0 || s=$?
+          test "$s" -eq 2
+          cat err2.txt
+          test ! -s out2.txt
+
+      - name: the probe reproduces the README's exit codes
+        run: |
+          set -euo pipefail
+          probe/ask-git.sh /tmp/probe | tee probe.txt
+          # no-entry: the recursive clone is the quiet one.
+          grep -qF 'git clone --recurse-submodules' probe.txt
+          grep -qF 'git status --porcelain in that clone: []' probe.txt
+          # update-none leaves the directory empty.
+          grep -qF 'vendor/liba: []' probe.txt
+          # stale-url: .git/config wins until sync.
+          grep -qF 'after git submodule sync' probe.txt

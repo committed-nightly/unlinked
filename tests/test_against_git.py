@@ -11,7 +11,12 @@ import os
 import pytest
 
 from unlinked.analyse import (
-    NO_ENTRY, NO_GITLINK, NO_URL, STALE_URL, UPDATE_NONE, audit,
+    NO_ENTRY,
+    NO_GITLINK,
+    NO_URL,
+    STALE_URL,
+    UPDATE_NONE,
+    audit,
 )
 from unlinked.facts import gather
 from unlinked.resolve import resolve_urls
@@ -38,6 +43,7 @@ def only_kinds(result):
 # --------------------------------------------------------------------------
 # no-entry: a gitlink nothing in .gitmodules maps.
 # --------------------------------------------------------------------------
+
 
 @pytest.fixture
 def orphan_gitlink(tmp_path):
@@ -95,6 +101,7 @@ def test_git_status_stays_clean_so_nothing_prompts_you(orphan_gitlink, tmp_path)
 # no-gitlink: a .gitmodules block with no gitlink to match.
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture
 def ghost_entry(tmp_path):
     root = str(tmp_path)
@@ -138,14 +145,14 @@ def test_entry_with_no_path_at_all(tmp_path):
 # no-url: declared, pinned, nowhere to clone from.
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture
 def missing_url(tmp_path):
     root = str(tmp_path)
     liba = g.make_remote(root, "liba")
     super_path = g.make_super(root)
     g.add_submodule(super_path, liba, "vendor/liba")
-    g.git("config", "--file", ".gitmodules", "--unset",
-          "submodule.vendor/liba.url", cwd=super_path)
+    g.git("config", "--file", ".gitmodules", "--unset", "submodule.vendor/liba.url", cwd=super_path)
     g.commit_all(super_path, "lose the url")
     return super_path
 
@@ -163,9 +170,21 @@ def test_missing_url_is_what_git_complains_about(missing_url, tmp_path):
     assert "No url found for submodule path 'vendor/liba'" in proc.stderr
 
 
+def test_missing_url_is_the_one_git_is_loud_about_both_ways(missing_url, tmp_path):
+    """The README's table claims this row is exit 128 under a recursive
+    clone as well, unlike every other kind here. It was written as exit 0
+    on the assumption that clone is always the quiet one, and that was
+    wrong."""
+    into = str(tmp_path / "recursive")
+    proc = g.clone(missing_url, into, recurse=True)
+    assert proc.returncode == 128, proc.stderr
+    assert not g.populated(into, "vendor/liba")
+
+
 # --------------------------------------------------------------------------
 # update-none: skipped, exit 0, empty directory.
 # --------------------------------------------------------------------------
+
 
 @pytest.fixture
 def update_none(tmp_path):
@@ -208,6 +227,7 @@ def test_update_none_is_not_reported_when_the_value_is_anything_else(tmp_path):
 # stale-url: the committed URL changed and this clone did not notice.
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture
 def stale_url(tmp_path):
     """A clone that was initialised against liba, in a superproject whose
@@ -237,8 +257,9 @@ def test_finds_the_stale_url(stale_url):
 def test_the_stale_url_is_where_git_really_fetches_from(stale_url):
     """The claim: .git/config wins, and goes on winning."""
     into, liba, libb = stale_url
-    proc = g.git(*g.FILE_OK, "submodule", "foreach", "--quiet",
-                 "git remote get-url origin", cwd=into)
+    proc = g.git(
+        *g.FILE_OK, "submodule", "foreach", "--quiet", "git remote get-url origin", cwd=into
+    )
     assert liba in proc.stdout
     assert libb not in proc.stdout
 
@@ -322,8 +343,7 @@ def test_a_relative_url_alone_is_not_a_finding(tmp_path):
     root = str(tmp_path)
     g.make_remote(root, "liba")
     super_path = g.make_super(root)
-    g.add_submodule(super_path, os.path.join(root, "remotes", "liba"),
-                    "vendor/liba")
+    g.add_submodule(super_path, os.path.join(root, "remotes", "liba"), "vendor/liba")
     g.gitmodules_set(super_path, "vendor/liba", "url", "../remotes/liba")
     g.commit_all(super_path, "use the relative form")
     g.sync_url(super_path, "vendor/liba")
@@ -333,6 +353,7 @@ def test_a_relative_url_alone_is_not_a_finding(tmp_path):
 # --------------------------------------------------------------------------
 # Not finding things.
 # --------------------------------------------------------------------------
+
 
 def test_a_healthy_repository_reports_nothing(tmp_path):
     root = str(tmp_path)
@@ -446,8 +467,7 @@ def test_duplicate_url_takes_the_last_one_like_git_does(tmp_path):
     g.add_submodule(super_path, first, "vendor/x")
     with open(f"{super_path}/.gitmodules", "w") as handle:
         handle.write(
-            '[submodule "vendor/x"]\n\tpath = vendor/x\n'
-            f"\turl = {first}\n\turl = {second}\n"
+            f'[submodule "vendor/x"]\n\tpath = vendor/x\n\turl = {first}\n\turl = {second}\n'
         )
     g.commit_all(super_path, "two urls")
 
@@ -467,8 +487,7 @@ def test_rev_reads_the_declarations_as_they_were(tmp_path):
     g.git("tag", "good", cwd=super_path)
     # Not commit_all: `git add -A` would put the gitlink straight back.
     g.git("rm", "--quiet", "--cached", "vendor/liba", cwd=super_path)
-    g.git("commit", "--quiet", "-m", "drop the gitlink, keep the block",
-          cwd=super_path)
+    g.git("commit", "--quiet", "-m", "drop the gitlink, keep the block", cwd=super_path)
 
     assert only_kinds(audit(gather(super_path, rev="good"))) == []
     assert only_kinds(audit(gather(super_path))) == [NO_GITLINK]

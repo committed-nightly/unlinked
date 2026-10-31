@@ -21,9 +21,14 @@ def _plural(count, word, suffix="s"):
 def _wrap(text, indent="    "):
     # Not on hyphens: these lines quote URLs and paths, and breaking
     # `--recurse-submodules` across two lines makes it uncopyable.
-    return textwrap.fill(text, width=88, initial_indent=indent,
-                         subsequent_indent=indent, break_on_hyphens=False,
-                         break_long_words=False)
+    return textwrap.fill(
+        text,
+        width=88,
+        initial_indent=indent,
+        subsequent_indent=indent,
+        break_on_hyphens=False,
+        break_long_words=False,
+    )
 
 
 def render(audit, terse=False):
@@ -36,9 +41,7 @@ def render(audit, terse=False):
     kind = max((len(f.kind) for f in shown), default=0)
     for finding in shown:
         if terse:
-            lines.append(
-                f"{finding.where:<{place}}  {finding.kind:<{kind}}  {finding.detail}"
-            )
+            lines.append(f"{finding.where:<{place}}  {finding.kind:<{kind}}  {finding.detail}")
         else:
             lines.append(f"{finding.where}  {finding.kind}")
             lines.append(_wrap(finding.detail))
@@ -57,16 +60,22 @@ def summary(audit):
         # Not a clean bill of health, because there was nothing to check.
         # A tool that says "all good" about a repository with no submodules
         # teaches you to believe it about one that has them (logbook#59).
-        return (f"No submodules here: no gitlinks in {facts.rev} and no "
-                f"entries in .gitmodules. Nothing to check.")
+        return (
+            f"No submodules here: no gitlinks in {facts.rev} and no "
+            f"entries in .gitmodules. Nothing to check."
+        )
 
     broken = {f.path or f.name for f in audit.findings}
-    seen = (f"{_plural(links, 'gitlink')} and {declared} .gitmodules "
-            f"{'entry' if declared == 1 else 'entries'}")
+    seen = (
+        f"{_plural(links, 'gitlink')} and {declared} .gitmodules "
+        f"{'entry' if declared == 1 else 'entries'}"
+    )
 
     if not audit.findings:
-        return (f"Every submodule declaration lines up. Read {seen} in "
-                f"{facts.root}.{_local_note(audit)}")
+        return (
+            f"Every submodule declaration lines up. Read {seen} in "
+            f"{facts.root}.{_local_note(audit)}"
+        )
 
     committed = sum(1 for f in audit.findings if f.scope == "committed")
     local = sum(1 for f in audit.findings if f.scope == "local")
@@ -75,9 +84,11 @@ def summary(audit):
         parts.append(f"{_plural(committed, 'declaration')} git never acts on")
     if local:
         parts.append(f"{_plural(local, 'URL')} this clone has frozen")
-    return (f"Found {' and '.join(parts)}, across "
-            f"{_plural(len(broken), 'submodule')}. Read {seen}."
-            f"{_local_note(audit)}")
+    return (
+        f"Found {' and '.join(parts)}, across "
+        f"{_plural(len(broken), 'submodule')}. Read {seen}."
+        f"{_local_note(audit)}"
+    )
 
 
 def _local_note(audit):
@@ -87,12 +98,13 @@ def _local_note(audit):
         # of all of them and interesting about none of them. It matters
         # because the stale-url check needs an initialised submodule to
         # have anything to compare, so here it checked nothing.
-        return (" Nothing is initialised in this clone, so there was no "
-                "frozen URL to check: run `git submodule update --init` "
-                "first if that is what you came for.")
+        return (
+            " Nothing is initialised in this clone, so there was no "
+            "frozen URL to check: run `git submodule update --init` "
+            "first if that is what you came for."
+        )
     if audit.notes:
-        return (f" {_plural(len(audit.notes), 'note')} below: nothing git "
-                f"refuses to act on.")
+        return f" {_plural(len(audit.notes), 'note')} below: nothing git refuses to act on."
     return ""
 
 

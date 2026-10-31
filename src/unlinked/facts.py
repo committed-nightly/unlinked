@@ -40,13 +40,12 @@ class Entry:
 
 
 class Facts:
-    def __init__(self, root, rev, gitlinks, entries, local, remote_url,
-                 entries_source, bare):
+    def __init__(self, root, rev, gitlinks, entries, local, remote_url, entries_source, bare):
         self.root = root
         self.rev = rev
-        self.gitlinks = gitlinks          # path -> commit sha
-        self.entries = entries            # list[Entry], config order
-        self.local = local                # name -> {key: value}
+        self.gitlinks = gitlinks  # path -> commit sha
+        self.entries = entries  # list[Entry], config order
+        self.local = local  # name -> {key: value}
         self.remote_url = remote_url
         self.entries_source = entries_source
         self.bare = bare
@@ -117,7 +116,8 @@ def _entries(path, rev, bare, worktree=True):
     source = f"{rev}:.gitmodules"
     if not bare and worktree:
         ok, out = run_ok(
-            ("config", "-z", "--file", ".gitmodules", "--list"), cwd=path,
+            ("config", "-z", "--file", ".gitmodules", "--list"),
+            cwd=path,
         )
         if ok:
             return _parse_entries(out), ".gitmodules"
@@ -158,7 +158,8 @@ def _parse_entries(out):
 
 def _local(path):
     ok, out = run_ok(
-        ("config", "--local", "-z", "--get-regexp", r"^submodule\."), cwd=path,
+        ("config", "--local", "-z", "--get-regexp", r"^submodule\."),
+        cwd=path,
     )
     if not ok:
         return {}

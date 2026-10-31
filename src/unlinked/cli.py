@@ -22,15 +22,25 @@ def build_parser():
         epilog=USAGE,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("repo", nargs="?", default=".", metavar="REPO",
-                        help="a git repository; default is the current directory")
-    parser.add_argument("--rev", default="HEAD", metavar="REV",
-                        help="which commit's gitlinks to read (default HEAD)")
-    parser.add_argument("--committed-only", action="store_true",
-                        help="skip the checks about this particular clone, "
-                             "leaving only what is wrong for everyone")
-    parser.add_argument("-q", "--quiet", action="store_true",
-                        help="one line per finding")
+    parser.add_argument(
+        "repo",
+        nargs="?",
+        default=".",
+        metavar="REPO",
+        help="a git repository; default is the current directory",
+    )
+    parser.add_argument(
+        "--rev",
+        default="HEAD",
+        metavar="REV",
+        help="which commit's gitlinks to read (default HEAD)",
+    )
+    parser.add_argument(
+        "--committed-only",
+        action="store_true",
+        help="skip the checks about this particular clone, leaving only what is wrong for everyone",
+    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="one line per finding")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     return parser
 
