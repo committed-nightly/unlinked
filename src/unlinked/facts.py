@@ -57,29 +57,38 @@ class Facts:
 
 
 def gather(path, rev="HEAD"):
-    """Ask git everything unlinked needs. Raises GitError if it cannot."""
+    """Ask git everything unlinked needs. Raises GitError if it cannot.
+
+    Every question after the first is asked from the top level of the
+    repository, never from `path`. Run from a subdirectory, `git ls-tree`
+    reports paths relative to the cwd and `--file .gitmodules` looks for a
+    file that is not there -- which made every submodule in the repository
+    look like it had no gitlink, purely because of where you were standing.
+    """
     root = run(("rev-parse", "--show-toplevel"), cwd=path).strip()
     if not root:
         # A bare repository has no toplevel. There is still a tree to read.
         root = run(("rev-parse", "--absolute-git-dir"), cwd=path).strip()
-    bare = run(("rev-parse", "--is-bare-repository"), cwd=path).strip() == "true"
+    bare = run(("rev-parse", "--is-bare-repository"), cwd=root).strip() == "true"
 
     # Resolve the rev up front so a typo'd --rev is an error and not an
     # empty tree reported as "no submodules here".
-    ok, _ = run_ok(("rev-parse", "--verify", f"{rev}^{{tree}}"), cwd=path)
+    ok, _ = run_ok(("rev-parse", "--verify", f"{rev}^{{tree}}"), cwd=root)
     if not ok:
         raise GitError(f"{rev}: not a revision in this repository")
 
-    gitlinks = _gitlinks(path, rev)
-    entries, source = _entries(path, rev, bare)
-    local = _local(path)
-    _, remote = run_ok(("config", "--local", "--get", "remote.origin.url"), cwd=path)
+    gitlinks = _gitlinks(root, rev)
+    entries, source = _entries(root, rev, bare)
+    local = _local(root)
+    _, remote = run_ok(("config", "--local", "--get", "remote.origin.url"), cwd=root)
 
     return Facts(root, rev, gitlinks, entries, local, remote.strip(), source, bare)
 
 
 def _gitlinks(path, rev):
-    out = run(("ls-tree", "-r", "-z", rev), cwd=path)
+    # --full-tree so the listing is rooted at the repository rather than at
+    # the cwd, and so the paths match what .gitmodules declares.
+    out = run(("ls-tree", "-r", "-z", "--full-tree", rev), cwd=path)
     links = {}
     for record in parse_z(out):
         info, sep, name = record.partition("\t")

@@ -28,15 +28,23 @@ def _wrap(text, indent="    "):
 
 def render(audit, terse=False):
     lines = []
-    for finding in audit.findings + audit.notes:
+    shown = audit.findings + audit.notes
+    # Terse output is for reading down a column, so the columns have to be
+    # columns. Widths come from what is actually being printed rather than
+    # from a guess at how long a submodule path gets.
+    place = max((len(f.where) for f in shown), default=0)
+    kind = max((len(f.kind) for f in shown), default=0)
+    for finding in shown:
         if terse:
-            lines.append(f"{finding.where}  {finding.kind:<16}  {finding.detail}")
+            lines.append(
+                f"{finding.where:<{place}}  {finding.kind:<{kind}}  {finding.detail}"
+            )
         else:
             lines.append(f"{finding.where}  {finding.kind}")
             lines.append(_wrap(finding.detail))
     if lines:
         lines.append("")
-    lines.append(summary(audit))
+    lines.append(_wrap(summary(audit), indent=""))
     return "\n".join(lines)
 
 
