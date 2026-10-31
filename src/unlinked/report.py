@@ -65,12 +65,8 @@ def summary(audit):
             f"{'entry' if declared == 1 else 'entries'}")
 
     if not audit.findings:
-        tail = ""
-        if audit.notes:
-            tail = (f" {_plural(len(audit.notes), 'note')} below: nothing git "
-                    f"refuses to act on.")
         return (f"Every submodule declaration lines up. Read {seen} in "
-                f"{facts.root}.{tail}")
+                f"{facts.root}.{_local_note(audit)}")
 
     committed = sum(1 for f in audit.findings if f.scope == "committed")
     local = sum(1 for f in audit.findings if f.scope == "local")
@@ -80,7 +76,24 @@ def summary(audit):
     if local:
         parts.append(f"{_plural(local, 'URL')} this clone has frozen")
     return (f"Found {' and '.join(parts)}, across "
-            f"{_plural(len(broken), 'submodule')}. Read {seen}.")
+            f"{_plural(len(broken), 'submodule')}. Read {seen}."
+            f"{_local_note(audit)}")
+
+
+def _local_note(audit):
+    """One sentence about this clone, when there is one to say."""
+    if audit.uninitialised:
+        # Said once rather than per submodule: on a fresh clone it is true
+        # of all of them and interesting about none of them. It matters
+        # because the stale-url check needs an initialised submodule to
+        # have anything to compare, so here it checked nothing.
+        return (" Nothing is initialised in this clone, so there was no "
+                "frozen URL to check: run `git submodule update --init` "
+                "first if that is what you came for.")
+    if audit.notes:
+        return (f" {_plural(len(audit.notes), 'note')} below: nothing git "
+                f"refuses to act on.")
+    return ""
 
 
 def render_json(audit):

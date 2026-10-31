@@ -78,7 +78,12 @@ def gather(path, rev="HEAD"):
         raise GitError(f"{rev}: not a revision in this repository")
 
     gitlinks = _gitlinks(root, rev)
-    entries, source = _entries(root, rev, bare)
+    # The worktree copy of .gitmodules is only the right file to read when
+    # the gitlinks came from the worktree's own commit. Asked about an older
+    # rev, reading today's .gitmodules against that rev's gitlinks compares
+    # two unrelated states -- which reported four healthy submodules in
+    # FreeCAD's history as broken before this was fixed.
+    entries, source = _entries(root, rev, bare, worktree=(rev == "HEAD"))
     local = _local(root)
     _, remote = run_ok(("config", "--local", "--get", "remote.origin.url"), cwd=root)
 
@@ -100,15 +105,17 @@ def _gitlinks(path, rev):
     return links
 
 
-def _entries(path, rev, bare):
+def _entries(path, rev, bare, worktree=True):
     """Read .gitmodules, preferring the worktree copy because git does.
 
     `git submodule` acts on the file in the working tree; an uncommitted
     edit there is live. With no worktree copy -- a bare repository, or
     somebody deleted it without committing that -- fall back to the blob.
+    `worktree=False` forces the blob, for auditing a rev that is not the
+    one checked out.
     """
     source = f"{rev}:.gitmodules"
-    if not bare:
+    if not bare and worktree:
         ok, out = run_ok(
             ("config", "-z", "--file", ".gitmodules", "--list"), cwd=path,
         )
@@ -137,7 +144,14 @@ def _parse_entries(out):
         if name not in settings:
             settings[name] = {}
             order.append(name)
-        # Last one wins, which is what git does for a repeated key.
+        # Last one wins. That is what `git config --get`, `git config
+        # --blob` and `git submodule init` all do with a repeated key -- the
+        # URL that ends up in .git/config is the last one in the file. (Some
+        # other reader inside git keeps the first and says "Skipping second
+        # one!" about a real .gitmodules in FreeCAD's history, but nothing
+        # observable follows from it, so this follows the path that decides
+        # where the clone comes from. test_duplicate_url_takes_the_last one
+        # pins it to git's behaviour rather than to this comment.)
         settings[name][leaf] = value
     return [Entry(name, settings[name]) for name in order]
 

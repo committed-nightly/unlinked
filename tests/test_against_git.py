@@ -359,16 +359,48 @@ def test_a_repository_with_no_submodules_is_not_called_clean(tmp_path):
     assert only_kinds(result) == []
 
 
-def test_an_uninitialised_clone_is_a_note_not_a_finding(tmp_path):
+def test_a_wholly_uninitialised_clone_says_nothing_per_submodule(tmp_path):
+    """A fresh clone has initialised nothing, and that is not news. Twenty
+    notes saying so on a repository with twenty submodules is how output
+    gets skipped -- so it becomes one sentence in the summary instead."""
     root = str(tmp_path)
     liba = g.make_remote(root, "liba")
+    libb = g.make_remote(root, "libb")
     super_path = g.make_super(root)
     g.add_submodule(super_path, liba, "vendor/liba")
+    g.add_submodule(super_path, libb, "vendor/libb")
     into = str(tmp_path / "working")
     g.clone(super_path, into)
     result = audit(gather(into))
     assert only_kinds(result) == []
-    assert [n.kind for n in result.notes] == ["not-initialised"]
+    assert result.notes == []
+    assert result.uninitialised is True
+
+
+def test_a_half_initialised_clone_notes_the_gap(tmp_path):
+    """The shape worth saying something about: `submodule update --init`
+    stops at the first submodule it cannot do, so one left behind while its
+    neighbours are fine is often where it stopped."""
+    root = str(tmp_path)
+    liba = g.make_remote(root, "liba")
+    libb = g.make_remote(root, "libb")
+    super_path = g.make_super(root)
+    g.add_submodule(super_path, liba, "vendor/liba")
+    g.add_submodule(super_path, libb, "vendor/libb")
+    into = str(tmp_path / "working")
+    g.clone(super_path, into)
+    # --init takes a path, and registers only that one. libb's URL never
+    # reaches .git/config, which is exactly the gap being tested.
+    g.submodule_update(into, "vendor/liba")
+    assert g.config_url(into, "vendor/liba") is not None
+    assert g.config_url(into, "vendor/libb") is None
+
+    result = audit(gather(into))
+    assert only_kinds(result) == []
+    assert result.uninitialised is False
+    assert [(n.kind, n.path) for n in result.notes] == [
+        ("not-initialised", "vendor/libb"),
+    ]
 
 
 def test_submodule_name_containing_a_dot(tmp_path):
@@ -401,6 +433,32 @@ def test_name_that_differs_from_path_is_matched_by_path(tmp_path):
     assert only_kinds(audit(facts)) == []
 
 
+def test_duplicate_url_takes_the_last_one_like_git_does(tmp_path):
+    """A .gitmodules with two `url =` lines for one submodule is a real
+    shape -- FreeCAD has one in its history -- and which one wins decides
+    where the clone comes from. Whatever git registers is what unlinked
+    must think the URL is, or every comparison after it is against the
+    wrong string."""
+    root = str(tmp_path)
+    first = g.make_remote(root, "first")
+    second = g.make_remote(root, "second")
+    super_path = g.make_super(root)
+    g.add_submodule(super_path, first, "vendor/x")
+    with open(f"{super_path}/.gitmodules", "w") as handle:
+        handle.write(
+            '[submodule "vendor/x"]\n\tpath = vendor/x\n'
+            f"\turl = {first}\n\turl = {second}\n"
+        )
+    g.commit_all(super_path, "two urls")
+
+    into = str(tmp_path / "working")
+    g.clone(super_path, into)
+    g.submodule_update(into)
+
+    facts = gather(into)
+    assert facts.entries[0].url == g.config_url(into, "vendor/x")
+
+
 def test_rev_reads_the_declarations_as_they_were(tmp_path):
     root = str(tmp_path)
     liba = g.make_remote(root, "liba")
@@ -414,3 +472,32 @@ def test_rev_reads_the_declarations_as_they_were(tmp_path):
 
     assert only_kinds(audit(gather(super_path, rev="good"))) == []
     assert only_kinds(audit(gather(super_path))) == [NO_GITLINK]
+
+
+def test_rev_reads_that_revs_gitmodules_not_the_worktrees(tmp_path):
+    """Found by running this over 1500 commits of FreeCAD: the gitlinks came
+    from --rev and .gitmodules came from the working tree, so four healthy
+    submodules were reported as broken because today's file does not
+    describe a commit from 2024. Both halves must come from the same rev."""
+    root = str(tmp_path)
+    liba = g.make_remote(root, "liba")
+    super_path = g.make_super(root)
+    g.add_submodule(super_path, liba, "vendor/liba")
+    g.git("tag", "then", cwd=super_path)
+
+    # History moves on: the submodule is renamed, so today's .gitmodules
+    # declares a path that did not exist at `then`, and does not declare
+    # the one that did.
+    g.git("mv", "vendor/liba", "vendor/moved", cwd=super_path)
+    g.gitmodules_drop(super_path, "vendor/liba")
+    g.gitmodules_set(super_path, "vendor/moved", "path", "vendor/moved")
+    g.gitmodules_set(super_path, "vendor/moved", "url", liba)
+    g.commit_all(super_path, "rename the submodule properly")
+
+    assert only_kinds(audit(gather(super_path))) == []
+
+    old = gather(super_path, rev="then")
+    assert old.entries_source == "then:.gitmodules"
+    assert [e.path for e in old.entries] == ["vendor/liba"]
+    assert sorted(old.gitlinks) == ["vendor/liba"]
+    assert only_kinds(audit(old, local_checks=False)) == []

@@ -47,7 +47,12 @@ def main(argv=None):
         print(f"unlinked: {args.repo}: {exc}", file=sys.stderr)
         return 2
 
-    audit = run_audit(facts, local_checks=not args.committed_only)
+    # Asked about an older rev, the local checks have nothing to say: this
+    # clone's .git/config was frozen against whatever .gitmodules said at
+    # init time, and comparing it with a historical declaration would
+    # report a difference that was never a mistake.
+    local = not args.committed_only and args.rev == "HEAD"
+    audit = run_audit(facts, local_checks=local)
 
     if args.json:
         print(render_json(audit))

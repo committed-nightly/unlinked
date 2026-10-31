@@ -59,10 +59,14 @@ class Finding:
 
 
 class Audit:
-    def __init__(self, facts, findings, notes):
+    def __init__(self, facts, findings, notes, uninitialised=False):
         self.facts = facts
         self.findings = findings
         self.notes = notes
+        # True when the repository has submodules and this clone has not
+        # initialised a single one. Not a finding -- but the summary should
+        # not imply the local checks found anything either way.
+        self.uninitialised = uninitialised
 
     @property
     def dead(self):
@@ -87,14 +91,15 @@ def audit(facts, local_checks=True):
 
     findings += _orphan_gitlinks(facts, by_path)
     findings += _entry_problems(facts, by_path)
+    uninitialised = False
     if local_checks and not facts.bare:
-        found, noted = _local_problems(facts)
+        found, noted, uninitialised = _local_problems(facts)
         findings += found
         notes += noted
 
     order = {kind: i for i, kind in enumerate(COMMITTED_KINDS + LOCAL_KINDS)}
     findings.sort(key=lambda f: (order.get(f.kind, 99), f.where))
-    return Audit(facts, findings, notes)
+    return Audit(facts, findings, notes, uninitialised=uninitialised)
 
 
 def _orphan_gitlinks(facts, by_path):
@@ -174,19 +179,29 @@ def _local_problems(facts):
     notes = []
     resolved = resolve_urls(facts.entries, facts.remote_url, facts.root)
 
+    live = [e for e in facts.entries
+            if e.path in facts.gitlinks and e.url is not None]
+    initialised = [e for e in live if "url" in facts.local.get(e.name, {})]
+    # A clone where nothing is initialised is just a clone nobody has run
+    # `git submodule update --init` in yet, and saying so twenty times is
+    # how output gets ignored. A clone where some are and some are not is
+    # the interesting shape, so that is the only one that gets notes.
+    note_uninitialised = bool(initialised) and len(initialised) < len(live)
+
     for entry in facts.entries:
         if entry.path is None or entry.path not in facts.gitlinks:
             continue  # already reported; nothing local follows from it
         configured = facts.local.get(entry.name, {}).get("url")
 
         if configured is None:
-            if entry.url is not None:
+            if entry.url is not None and note_uninitialised:
                 notes.append(Finding(
                     NOT_INITIALISED, f".gitmodules:{entry.name}",
-                    f"not initialised in this clone -- no "
-                    f"submodule.{entry.name}.url in .git/config. Ordinary "
-                    f"before `git submodule update --init`; worth a look if "
-                    f"you think you already ran it",
+                    f"not initialised in this clone, while the repository's "
+                    f"other submodules are -- no submodule.{entry.name}.url "
+                    f"in .git/config. `git submodule update --init` stops at "
+                    f"the first one it cannot do, so a gap in the middle is "
+                    f"often where it stopped",
                     name=entry.name, path=entry.path,
                 ))
             continue
@@ -208,7 +223,7 @@ def _local_problems(facts):
             name=entry.name, path=entry.path,
             extra={"configured": configured, "declared": want},
         ))
-    return found, notes
+    return found, notes, bool(live) and not initialised
 
 
 def counts(audit_result):
