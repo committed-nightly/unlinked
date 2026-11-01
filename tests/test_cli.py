@@ -4,11 +4,13 @@ The exit code is the part other programs read, and the thing it must never
 do is say 0 about a repository unlinked failed to look at.
 """
 
+import errno
 import json
 
 import pytest
 
 from unlinked.cli import main
+from unlinked.gitcmd import _why_it_would_not_start
 
 from . import git_oracle as g
 
@@ -67,6 +69,77 @@ def test_exit_2_when_it_is_not_a_repository(tmp_path, capsys):
     captured = capsys.readouterr()
     assert captured.out == "", "nothing may go to stdout on a failed run"
     assert "unlinked:" in captured.err
+
+
+def test_exit_2_on_a_path_that_does_not_exist(tmp_path, capsys):
+    """The one that used to lie. `subprocess.run` raises FileNotFoundError
+    for a cwd that is not there as well as for a git that is not there, and
+    the handler blamed $PATH for both -- so a typo in REPO, the only
+    positional argument, sent the reader off to audit their $PATH for a tool
+    that was sitting on it."""
+    assert main([str(tmp_path / "not-cloned-yet")]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == "", "nothing may go to stdout on a failed run"
+    assert "no such directory" in captured.err
+    assert "PATH" not in captured.err, "git is on the PATH; saying otherwise is the bug"
+
+
+def test_exit_2_when_the_path_is_a_file(tmp_path, capsys):
+    """Where tab completion lands: `unlinked README.md`. The same mistake one
+    errno along, in the sibling handler, which printed a bare [Errno 20] and
+    a repr of the path."""
+    handle = tmp_path / "README.md"
+    handle.write_text("not a repository\n")
+    assert main([str(handle)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "not a directory" in captured.err
+    assert "PATH" not in captured.err
+    assert "Errno" not in captured.err, "an errno is not an explanation"
+
+
+def test_a_genuinely_missing_git_is_still_reported_as_missing(tmp_path, monkeypatch, capsys):
+    """The guard in the other direction. The fix must not turn a real
+    "git is not on PATH" into a complaint about the directory, so: a cwd that
+    certainly exists, and nothing on PATH."""
+    empty = tmp_path / "bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert main([str(tmp_path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "git is not on PATH" in captured.err
+
+
+def test_a_git_that_will_not_execute_is_not_blamed_on_the_directory(tmp_path, monkeypatch, capsys):
+    """The case that earns the cwd check: identical EACCES, but the directory
+    is fine, so it really is about the executable. A file with no execute bit
+    fails to exec for root too, so this needs no uid and never skips -- CI
+    asserts zero skips."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    (bindir / "git").write_text("#!/bin/sh\necho hi\n")  # mode 0644: present, not runnable
+    monkeypatch.setenv("PATH", str(bindir))
+    assert main([str(tmp_path)]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "could not run git" in captured.err
+    assert "no such directory" not in captured.err
+
+
+def test_an_unreadable_directory_is_not_reported_as_absent(tmp_path):
+    """`os.path.isdir()` is false for a directory behind an unreadable parent
+    as well as for one that is absent, which is why the errno picks the
+    wording and the stat only picks the culprit.
+
+    Asserted against the handler rather than through the CLI on purpose: a
+    `chmod 000` does not stop root, so the end-to-end version would have to
+    skip itself in a root container, and CI's no-skips check (correctly)
+    treats a skip as a test that did not run."""
+    denied = PermissionError(errno.EACCES, "Permission denied")
+    assert _why_it_would_not_start(denied, str(tmp_path / "behind-a-closed-door")) == (
+        "directory is not accessible"
+    )
 
 
 def test_exit_2_on_a_rev_that_does_not_exist(broken, capsys):
