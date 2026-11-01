@@ -127,19 +127,47 @@ def test_a_git_that_will_not_execute_is_not_blamed_on_the_directory(tmp_path, mo
     assert "no such directory" not in captured.err
 
 
-def test_an_unreadable_directory_is_not_reported_as_absent(tmp_path):
-    """`os.path.isdir()` is false for a directory behind an unreadable parent
-    as well as for one that is absent, which is why the errno picks the
-    wording and the stat only picks the culprit.
+def test_a_directory_that_cannot_be_entered_is_described_as_such(tmp_path):
+    """A `chmod 000` does not stop root, so this one cannot be built
+    end-to-end without skipping itself in a root container -- and CI counts a
+    skip as a test that did not run. Asserted against the handler instead,
+    with the exception CPython would raise: `.filename` names the directory,
+    so the directory is at fault, and EACCES supplies the wording."""
+    closed = tmp_path / "behind-a-closed-door"
+    denied = PermissionError(errno.EACCES, "Permission denied", str(closed))
+    assert _why_it_would_not_start(denied, str(closed)) == "directory is not accessible"
 
-    Asserted against the handler rather than through the CLI on purpose: a
-    `chmod 000` does not stop root, so the end-to-end version would have to
-    skip itself in a root container, and CI's no-skips check (correctly)
-    treats a skip as a test that did not run."""
-    denied = PermissionError(errno.EACCES, "Permission denied")
-    assert _why_it_would_not_start(denied, str(tmp_path / "behind-a-closed-door")) == (
-        "directory is not accessible"
-    )
+
+def test_the_exception_wins_over_a_directory_that_looks_fine_now(tmp_path):
+    """Why `.filename` is asked first and the stat is only a fallback: between
+    the failed chdir and any stat of our own, the directory can come back.
+    Then the stat says the cwd is fine and the only conclusion left is the
+    wrong one -- that git is missing. The exception already knows."""
+    gone_and_back = FileNotFoundError(errno.ENOENT, "No such file or directory", str(tmp_path))
+    assert tmp_path.is_dir(), "the premise: the stat would now say this is fine"
+    assert _why_it_would_not_start(gone_and_back, str(tmp_path)) == "no such directory"
+
+
+def test_the_culprit_is_still_found_without_a_filename_on_the_exception(tmp_path):
+    """`.filename` is a CPython detail. If it is ever absent the fallback asks
+    the directory rather than reverting to the guess that was the bug."""
+    absent = str(tmp_path / "not-cloned-yet")
+    bare = FileNotFoundError(errno.ENOENT, "No such file or directory")
+    assert bare.filename is None, "the premise of this test"
+    assert _why_it_would_not_start(bare, absent) == "no such directory"
+    # ...and with no cwd to blame it is still git that is missing.
+    assert _why_it_would_not_start(bare, None) == "git is not on PATH"
+
+
+def test_when_both_are_missing_the_directory_is_blamed(tmp_path, monkeypatch, capsys):
+    """subprocess chdirs before it execs, so an absent cwd is the failure the
+    OS reports even when git is absent too. Naming the directory is right:
+    fixing the PATH would not get the user any further."""
+    empty = tmp_path / "bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert main([str(tmp_path / "not-cloned-yet")]) == 2
+    assert "no such directory" in capsys.readouterr().err
 
 
 def test_exit_2_on_a_rev_that_does_not_exist(broken, capsys):

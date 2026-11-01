@@ -12,6 +12,8 @@ split across what look like two settings.
 
 import subprocess
 
+GIT = "git"
+
 
 class GitError(Exception):
     """git could not answer. Never a finding -- always an exit 2."""
@@ -21,7 +23,7 @@ def run(args, cwd=None, check=True):
     """Run git and return stdout. Raise GitError when it fails."""
     try:
         proc = subprocess.run(
-            ("git", *args),
+            (GIT, *args),
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -41,22 +43,32 @@ def run(args, cwd=None, check=True):
 def _why_it_would_not_start(exc, cwd):
     """Say which of the two missing things actually stopped us.
 
-    `subprocess.run` raises the same errors for a git that is not there and
-    for a `cwd` it cannot enter: it chdirs in the child before it execs, so a
-    directory that is not there loses first and git never gets as far as
-    being missing. Reporting all of it as "git is not on PATH" sent anyone
-    who typo'd the one positional argument off to audit their $PATH for a
-    tool that was never the problem.
+    subprocess raises out of _execute_child, before git runs at all, both for
+    an executable it cannot find and for a `cwd` it cannot enter -- and it
+    chdirs in the child before it execs, so a directory that is not there
+    loses first and git never gets as far as being missing. Reporting all of
+    it as "git is not on PATH" sent anyone who typo'd the one positional
+    argument off to audit their $PATH for a tool that was never the problem.
 
-    The errno is the OS's own verdict on *why*, so it picks the wording; the
-    cwd is only consulted to decide *who* -- the directory or the executable.
+    CPython names the path it actually failed on in `.filename` -- the cwd,
+    or "git" -- which is the direct answer to which of the two it was, and
+    the one `unapplied` settled on for the same question. Given the culprit,
+    the errno picks the wording.
     """
     import errno
     import os
 
-    if cwd is not None and not (os.path.isdir(cwd) and os.access(cwd, os.X_OK)):
-        # isdir() is false for an unreadable parent too, which is why EACCES
-        # is answered before the stat result rather than from it.
+    at_fault = exc.filename
+    if at_fault is None and cwd is not None:
+        # Not CPython, or a CPython that stopped setting .filename. Ask the
+        # directory directly rather than fall back to the guess that was the
+        # bug. os.path.isdir is false for an unreadable parent as well as an
+        # absent path, which is fine here: both are the cwd's fault, and the
+        # errno below still says which.
+        if not (os.path.isdir(cwd) and os.access(cwd, os.X_OK)):
+            at_fault = os.fspath(cwd)
+
+    if at_fault is not None and at_fault != GIT:
         if exc.errno == errno.EACCES:
             return "directory is not accessible"
         if exc.errno == errno.ENOTDIR:
@@ -64,8 +76,9 @@ def _why_it_would_not_start(exc, cwd):
         return "no such directory"
     if isinstance(exc, FileNotFoundError):
         return "git is not on PATH"
-    # git is there and the directory is fine, so this is about the executable
-    # itself -- not executable, or the OS declining for its own reasons.
+    # The directory is fine and git is there, so this is the executable
+    # itself: present but not runnable, or the OS declining for its own
+    # reasons.
     return f"could not run git: {exc.strerror or exc}"
 
 
