@@ -29,15 +29,44 @@ def run(args, cwd=None, check=True):
             # run. Nothing here needs either.
             env=_env(),
         )
-    except FileNotFoundError:
-        raise GitError("git is not on PATH") from None
-    except OSError as exc:  # pragma: no cover - depends on the OS
-        raise GitError(f"could not run git: {exc}") from None
+    except OSError as exc:
+        raise GitError(_why_it_would_not_start(exc, cwd)) from None
     if check and proc.returncode != 0:
         detail = proc.stderr.strip().splitlines()
         first = detail[0] if detail else f"git exited {proc.returncode}"
         raise GitError(first.removeprefix("fatal: ").removeprefix("error: "))
     return proc.stdout
+
+
+def _why_it_would_not_start(exc, cwd):
+    """Say which of the two missing things actually stopped us.
+
+    `subprocess.run` raises the same errors for a git that is not there and
+    for a `cwd` it cannot enter: it chdirs in the child before it execs, so a
+    directory that is not there loses first and git never gets as far as
+    being missing. Reporting all of it as "git is not on PATH" sent anyone
+    who typo'd the one positional argument off to audit their $PATH for a
+    tool that was never the problem.
+
+    The errno is the OS's own verdict on *why*, so it picks the wording; the
+    cwd is only consulted to decide *who* -- the directory or the executable.
+    """
+    import errno
+    import os
+
+    if cwd is not None and not (os.path.isdir(cwd) and os.access(cwd, os.X_OK)):
+        # isdir() is false for an unreadable parent too, which is why EACCES
+        # is answered before the stat result rather than from it.
+        if exc.errno == errno.EACCES:
+            return "directory is not accessible"
+        if exc.errno == errno.ENOTDIR:
+            return "not a directory"
+        return "no such directory"
+    if isinstance(exc, FileNotFoundError):
+        return "git is not on PATH"
+    # git is there and the directory is fine, so this is about the executable
+    # itself -- not executable, or the OS declining for its own reasons.
+    return f"could not run git: {exc.strerror or exc}"
 
 
 def run_ok(args, cwd=None):
