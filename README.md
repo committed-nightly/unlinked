@@ -65,9 +65,11 @@ unlinked --json
 ```
 
 Exit code is 0 when there is nothing to report, 1 when there is, and 2 when
-unlinked could not get an answer — not a repository, no such rev, a
-`.gitmodules` git refuses to parse. On exit 2 nothing goes to stdout, so a
-run that failed to read a repository can never be mistaken for a clean one.
+unlinked could not get an answer — no such directory, not a repository, no
+such rev, a `.gitmodules` git refuses to parse. The message says which of
+those it was: a path that is not there is never reported as a git that is not
+there. On exit 2 nothing goes to stdout, so a run that failed to read a
+repository can never be mistaken for a clean one.
 
 A repository with no submodules at all says so (`No submodules here`) rather
 than reporting that everything is fine, because those are different answers

@@ -142,6 +142,19 @@ jobs:
           cat err2.txt
           test ! -s out2.txt
 
+      - name: a path that is not there says so, and does not blame the PATH
+        run: |
+          set -euo pipefail
+          # The README promises the exit-2 message names which failure it
+          # was. git is certainly on the PATH in this job, so any mention of
+          # the PATH here is exactly the bug this step exists to catch.
+          unlinked /tmp/not-cloned-yet > out3.txt 2> err3.txt && s=0 || s=$?
+          test "$s" -eq 2
+          cat err3.txt
+          test ! -s out3.txt
+          grep -qF 'no such directory' err3.txt
+          test "$(grep -c 'PATH' err3.txt)" -eq 0
+
       - name: the probe reproduces the README's exit codes
         run: |
           set -euo pipefail
