@@ -155,7 +155,9 @@ def test_committed_only_drops_the_local_finding_and_nothing_else(example, capsys
 
     kept = committed.splitlines()
     dropped = [line.split()[1] for line in full.splitlines() if line not in kept and "  " in line]
-    assert dropped == ["stale-url"], f"--committed-only changed more than the local finding: {dropped}"
+    assert dropped == ["stale-url"], (
+        f"--committed-only changed more than the local finding: {dropped}"
+    )
 
     # The denominator is a fact about what was read, not about which checks
     # ran, so it is identical in both modes. The grep this replaces stopped
