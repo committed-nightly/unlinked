@@ -8,6 +8,12 @@ reader learns there was no error message to miss.
 The summary counts declarations, not findings. One block can be wrong in
 two ways at once -- no URL and `update = none` -- and counting findings
 would make that look like two broken submodules.
+
+Terse output is not wrapped, summary included. The default form fills the
+summary to 88 columns, which splits one sentence across two lines at
+whatever column the counts happen to reach -- so `unlinked | tail -1`
+returns the tail of a sentence, and a grep for the summary can only ever
+match part of it. Anything reading this output by line wants `-q`.
 """
 
 import json
@@ -47,7 +53,13 @@ def render(audit, terse=False):
             lines.append(_wrap(finding.detail))
     if lines:
         lines.append("")
-    lines.append(_wrap(summary(audit), indent=""))
+    text = summary(audit)
+    # One line, in the mode whose whole promise is one line per thing. A
+    # filled summary wraps mid-sentence, so every physical line of it is an
+    # artefact of the count's width rather than a unit of meaning: append a
+    # sentence and the first line is unchanged, which makes even a
+    # whole-line match on it blind to the edit.
+    lines.append(text if terse else _wrap(text, indent=""))
     return "\n".join(lines)
 
 
