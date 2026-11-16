@@ -60,7 +60,7 @@ unlinked                     # this repository
 unlinked path/to/repo        # another one
 unlinked --rev v2.0.0        # the declarations as they were at a tag
 unlinked --committed-only    # skip what is only true of this clone
-unlinked -q                  # one line per finding
+unlinked -q                  # one line per finding, summary unwrapped
 unlinked --json
 ```
 
@@ -74,6 +74,12 @@ repository can never be mistaken for a clean one.
 A repository with no submodules at all says so (`No submodules here`) rather
 than reporting that everything is fine, because those are different answers
 and only one of them means anything was checked.
+
+The default form wraps to 88 columns, summary included, so the summary
+above is two lines rather than one. If something is going to read this
+output by line — `tail -1`, a `grep` in CI — use `-q`, which wraps
+nothing. A grep for a summary in the wrapped form can only ever match part
+of the sentence, and will keep passing when the rest of it changes.
 
 ## What it finds
 

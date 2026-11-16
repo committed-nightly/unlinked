@@ -59,8 +59,13 @@ def test_exit_0_but_says_there_was_nothing_to_check(tmp_path, capsys):
     super_path = g.make_super(str(tmp_path))
     assert main([super_path]) == 0
     out = capsys.readouterr().out
-    assert "No submodules here" in out
-    assert "Nothing to check." in out
+    # The whole sentence, not its two ends. logbook#64: `"No submodules
+    # here" in out` and `"Nothing to check." in out` both survive the
+    # middle clause -- the half that says what was looked at -- being
+    # replaced by anything at all.
+    assert out == (
+        "No submodules here: no gitlinks in HEAD and no entries in .gitmodules. Nothing to check.\n"
+    )
     assert "lines up" not in out
 
 

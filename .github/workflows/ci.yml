@@ -99,38 +99,58 @@ jobs:
           test "$status" -eq 1
 
           # Every kind the README's table names, at the place it names.
-          grep -qF 'vendor/widgets  no-entry' out.txt
-          grep -qF '.gitmodules:vendor/old-parser  no-gitlink' out.txt
-          grep -qF '.gitmodules:vendor/logging  update-none' out.txt
-          grep -qF '.gitmodules:vendor/parser  stale-url' out.txt
+          # Whole lines, so -x: the default form prints place and kind on a
+          # line of their own and nothing else, and an appended column is
+          # exactly the drift worth catching here.
+          grep -qxF 'vendor/widgets  no-entry' out.txt
+          grep -qxF '.gitmodules:vendor/old-parser  no-gitlink' out.txt
+          grep -qxF '.gitmodules:vendor/logging  update-none' out.txt
+          grep -qxF '.gitmodules:vendor/parser  stale-url' out.txt
 
+          # The next two are substrings on purpose. Both sit inside a detail
+          # sentence wrapped to 88 columns, so neither is a whole line and
+          # -x would fail on a reflow that changed no words.
+          #
           # The gitlink hash is quoted in the README, which only works
           # because the example is built with fixed commit dates.
           grep -qF 'pinned at 51f45708bb81' out.txt
-
           # The relative URL resolved against the superproject's remote.
           grep -qF "now says 'https://github.com/example/parser.git'" out.txt
 
-          # The summary, which is the line most likely to drift.
-          grep -qF 'Found 3 declarations git never acts on and 1 URL this clone has frozen, across 4' out.txt
-          grep -qF 'submodules. Read 3 gitlinks and 3 .gitmodules entries.' out.txt
+          # The summary, read as the sentence it is rather than as whichever
+          # two lines it fell onto. logbook#64: the default form fills it to
+          # 88 columns and breaks it mid-sentence, so appending a sentence to
+          # the summary leaves the first physical line byte-identical -- a
+          # whole-line match on that line passes too, which is why this asks
+          # -q for it. The wrapped block the README actually quotes is
+          # compared in full by tests/test_readme_example.py.
+          unlinked -q /tmp/unlinked-example/app > terse.txt && t=0 || t=$?
+          test "$t" -eq 1
+          tail -1 terse.txt
+          grep -qxF 'Found 3 declarations git never acts on and 1 URL this clone has frozen, across 4 submodules. Read 3 gitlinks and 3 .gitmodules entries.' terse.txt
 
       - name: committed-only drops the local finding and nothing else
         run: |
           set -euo pipefail
-          unlinked --committed-only /tmp/unlinked-example/app > c.txt && s=0 || s=$?
+          unlinked -q --committed-only /tmp/unlinked-example/app > c.txt && s=0 || s=$?
           test "$s" -eq 1
           cat c.txt
           test "$(grep -c 'stale-url' c.txt)" -eq 0
-          grep -qF 'Found 3 declarations git never acts on, across 3 submodules.' c.txt
+          # Whole line, so the denominator is inside the assertion. The
+          # pattern this replaces stopped at 'submodules.' and matched the
+          # opening of a wrapped line, leaving 'Read 3 gitlinks and 3
+          # .gitmodules entries.' unasserted in the one mode where what was
+          # still read is the thing in question (logbook#64).
+          grep -qxF 'Found 3 declarations git never acts on, across 3 submodules. Read 3 gitlinks and 3 .gitmodules entries.' c.txt
 
       - name: a healthy repository exits 0 and says so
         run: |
           set -euo pipefail
-          unlinked /tmp/unlinked-example/remotes/logging | tee h.txt
-          grep -qF 'No submodules here' h.txt
+          unlinked -q /tmp/unlinked-example/remotes/logging | tee h.txt
           # The distinction logbook#59 is about: a repository with nothing
-          # to check must not get the sentence meaning "I checked".
+          # to check must not get the sentence meaning "I checked". Pinned
+          # whole, so the half naming what it looked at counts too.
+          grep -qxF 'No submodules here: no gitlinks in HEAD and no entries in .gitmodules. Nothing to check.' h.txt
           test "$(grep -c 'lines up' h.txt)" -eq 0
 
       - name: a run that could not read the repository exits 2 and prints nothing
@@ -162,7 +182,8 @@ jobs:
           # no-entry: the recursive clone is the quiet one.
           grep -qF 'git clone --recurse-submodules' probe.txt
           grep -qF 'git status --porcelain in that clone: []' probe.txt
-          # update-none leaves the directory empty.
-          grep -qF 'vendor/liba: []' probe.txt
+          # update-none leaves the directory empty. A whole line, and -x
+          # matters: two lines of this probe open 'vendor/liba: ['.
+          grep -qxF 'vendor/liba: []' probe.txt
           # stale-url: .git/config wins until sync.
           grep -qF 'after git submodule sync' probe.txt
